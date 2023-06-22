@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Web Map</title>
+    <style>
+      .title {
+        color: aqua;
+      }
+
+      #weatherInfo {
+        display: none;
+        color: rgb(255, 255, 255);
+        background-color: #c74141;
+        padding: 10px;
+        border-radius: 5px;
+        margin-bottom: 10px;
+      }
+
+      #weatherInfo h2 {
+        text-decoration: underline;
+        color: rgb(0, 0, 0);
+        margin-bottom: 5px;
+        margin-top: -5px;
+      }
+
+      #weatherInfo p {
+        margin: 0;
+      }
+
+      #placesInfo {
+        color: aqua;
+      }
+
+      #map {
+        height: 600px;
+        width: 95%;
+        position: absolute;
+      }
+
+      .search-container {
+        margin-bottom: 10px;
+      }
+
+      .search-input {
+        padding: 5px;
+        margin-right: 5px;
+      }
+
+      .search-button {
+        padding: 5px 10px;
+        background-color: aqua;
+        color: #000;
+        border: none;
+        cursor: pointer;
+      }
+
+      #countryInput {
+        width: 150px;
+      }
+    </style>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"
+    />
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  </head>
+  <body style="background-color: rgb(25, 39, 52)">
+    <div class="container">
+      <h1 class="title">World Map</h1>
+
+      <div class="search-container">
+        <input
+          type="text"
+          id="cityInput"
+          class="search-input"
+          placeholder="city name"
+        />
+        <button id="weatherButton" class="search-button">Search Weather</button>
+        <button id="placesButton" class="search-button">
+          Search popular Place
+        </button>
+        <input
+          type="text"
+          id="countryInput"
+          class="search-input"
+          placeholder="Country name"
+        />
+        <button onclick="searchCountry()" class="search-button">
+          Search Country
+        </button>
+      </div>
+
+      <div id="weatherInfo" class="weather-info"></div>
+
+      <div id="map"></div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+
+    <script>
+      const weatherApiKey = "490e994c9be545f286e2622d9ad65363";
+      const historicApiKey = "49805cdc12b74555acb3186352e13d7c";
+      var addedLayer = [];
+      var addedMarker = [];
+      var found = false;
+      var marked = false;
+      var marker;
+      var circle;
+
+      var map = L.map("map").setView([0, 0], 2);
+
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "&copy; OpenStreetMap contributors",
+      }).addTo(map);
+
+      // // Define the night mode tile layer
+      // var nightModeTileLayer = L.tileLayer(
+      //   "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+      //   {
+      //     attribution:
+      //       'Map data &copy; <a href="https://www.carto.com/">Carto</a>',
+      //   }
+      // );
+
+      // Add the night mode tile layer to the map
+      //nightModeTileLayer.addTo(map);
+
+      const cityInput = document.getElementById("cityInput");
+      const weatherButton = document.getElementById("weatherButton");
+      const weatherInfo = document.getElementById("weatherInfo");
+      const placesButton = document.getElementById("placesButton");
+
+      weatherButton.addEventListener("click", fetchWeatherData);
+      placesButton.addEventListener("click", fetchPopularPlaces);
+
+      async function fetchWeatherData() {
+        const city = cityInput.value;
+        try {
+          const response = await fetch(
+            `https://api.weatherbit.io/v2.0/current?city=${city}&key=${weatherApiKey}`
+          );
+          const data = await response.json();
+          displayWeatherData(data.data[0]);
+        } catch (error) {
+          console.error(error);
+        }
+      }
+
+      function displayWeatherData(weatherData) {
+        weatherInfo.innerHTML = `
+          <h2 style="text-decoration: underline;">${weatherData.city_name}</h2>
+          <p>Temperature: ${weatherData.temp}°C</p>
+          <p>Humidity: ${weatherData.rh}%</p>
+          <p>Wind Speed: ${weatherData.wind_spd} m/s</p>
+          `;
+
+        addedLayer.forEach((element) => {
+          if (element === weatherData.city_name) {
+            found = true;
+            return;
+          }
+        });
+
+        if (found) {
+          map.setView([weatherData.lat, weatherData.lon], 12);
+          found = false;
+        } else {
+          let circle = L.circle([weatherData.lat, weatherData.lon], {
+            name: weatherData.city_name,
+            color: "red",
+            fillColor: "#f03",
+            fillOpacity: 0.5,
+            radius: 3500,
+          }).addTo(map);
+          circle.bindPopup(
+            weatherData.city_name + "\t\t" + weatherData.temp + "°C"
+          );
+          map.setView([weatherData.lat, weatherData.lon], 12);
+          addedLayer.push(weatherData.city_name);
+        }
+
+        weatherInfo.style.display = "block";
+      }
+
+      async function fetchPopularPlaces() {
+        const city = cityInput.value;
+        try {
+          const response = await fetch(
+            `https://api.opencagedata.com/geocode/v1/json?q=${city}&key=${historicApiKey}&no_annotations=1`
+          );
+          const data = await response.json();
+          const coordinates = data.results[0].geometry;
+          const { lat, lng } = coordinates;
+          const popularPlaces = await fetchPlaces(lat, lng);
+          displayPopularPlaces(popularPlaces);
+        } catch (error) {
+          console.error(error);
+        }
+        weatherInfo.style.display = "none";
+      }
+
+      async function fetchPlaces(latitude, longitude) {
+        const response = await fetch(
+          `https://api.opencagedata.com/geocode/v1/json?q=${latitude}+${longitude}&key=${historicApiKey}`
+        );
+        const data = await response.json();
+        return data.results;
+      }
+
+      function displayPopularPlaces(places) {
+        places.map((place) => {
+          var { lat, lng } = place.geometry;
+          addedMarker.forEach((element) => {
+            if (place.formatted === element) {
+              marked = true;
+            }
+          });
+
+          if (marked) {
+            map.setView([lat, lng], 10);
+            marked = false;
+          } else {
+            let marker = L.marker([lat, lng]).addTo(map);
+            marker.bindPopup(place.formatted).openPopup();
+            addedMarker.push(place.formatted);
+            map.setView([lat, lng], 19);
+          }
+        });
+      }
+
+      function searchCountry() {
+        var cityName = document.getElementById("countryInput").value;
+
+        // Make a request to the REST Countries API to retrieve city details
+        fetch(`https://restcountries.com/v3.1/name/${cityName}`)
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.length === 0) {
+              alert("City not found.");
+              return;
+            }
+
+            var country = data[0];
+            var latlng = [country.latlng[0], country.latlng[1]];
+            console.log(country);
+
+            // Clear existing markers
+            map.eachLayer((layer) => {
+              if (layer instanceof L.Marker) {
+                map.removeLayer(layer);
+              }
+            });
+
+            // Add marker for the city
+            L.marker(latlng)
+              .addTo(map)
+              .bindPopup(
+                `<b>${country.name.common}</b><br>
+                Flag: <img src="${country.flags.png}" alt="Flag of ${
+                  country.name.common
+                }" width="50px"><br>
+                Capital: ${country.capital}<br>
+                Population: ${country.population}<br>
+                Area: ${country.area} km²<br>
+                Currency: ${Object.keys(country.currencies).join(", ")}<br>
+                Languages: ${Object.values(country.languages).join(", ")}`
+              )
+              .openPopup();
+
+            // Set the map view to the city's location
+            map.setView(latlng, 10);
+          })
+          .catch((error) => {
+            console.error(error);
+            alert("An error occurred while fetching city details.");
+          });
+        weatherInfo.style.display = "none";
+      }
+    </script>
+  </body>
+</html>
